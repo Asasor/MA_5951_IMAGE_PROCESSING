@@ -1,0 +1,109 @@
+import cv2
+import numpy as np
+
+from cscore import CameraServer
+
+# intensity of blur
+sigma = 2
+
+# threshold for colour 1
+lowDisk1 = [15,70,15]
+highDisk1 = [70,180,215]
+
+# threshold for colour 2
+lowDisk2 = [15,70,15]
+highDisk2 = [70,180,215]
+
+def round_up_to_odd(f):
+    return np.ceil(f / 2.) * 2 + 1
+
+def main():
+    cs = CameraServer.getInstance()
+    cs.enableLogging()
+
+    camera = cs.startAutomaticCapture()
+
+    camera.setResolution(640, 480)
+
+    # Get a CvSink. This will capture images from the camera
+    cvSink = cs.getVideo()
+
+    # (optional) Setup a CvSource. This will send images back to the Dashboard
+    outputStream = cs.putVideo("Rectangle", 640, 480)
+
+    # Allocating new images is very expensive, always try to preallocate
+    img = np.zeros(shape=(480, 640, 3), dtype=np.uint8)
+
+    while True:
+        # Tell the CvSink to grab a frame from the camera and put it
+        # in the source image.  If there is an error notify the output.
+        time, img = cvSink.grabFrame(img)
+        if time == 0:
+            # Send the output the error.
+            outputStream.notifyError(cvSink.getError())
+            # skip the rest of the current iteration
+            continue
+
+        small = cv2.resize(img, (0, 0), fx=0.5, fy=0.5)
+        resizedImg = small.shape
+
+        kernel_size = int(round_up_to_odd(resizedImg[1] * 0.01))
+        blurredImg = cv2.GaussianBlur(small, (kernel_size, kernel_size), sigma)
+        frame_HSV = cv2.cvtColor(blurredImg, cv2.COLOR_BGR2HSV)
+        frame_threshold1 = cv2.inRange(frame_HSV, (lowDisk1[0], lowDisk1[1], lowDisk1[2]),
+                                      (highDisk1[0], highDisk1[1], highDisk1[2]))
+
+        frame_threshold2 = cv2.inRange(frame_HSV, (lowDisk2[0], lowDisk2[1], lowDisk2[2]),
+                                      (highDisk2[0], highDisk2[1], highDisk2[2]))
+
+        total_frame_threshold = cv2.add(frame_threshold1, frame_threshold2)
+        contours, hierarchy = cv2.findContours(frame_threshold, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+
+        print(len(contours))
+
+        for i in contours:
+            global path, d, w, h
+            cnt = i
+            M = cv2.moments(cnt)
+            # x, y, width, height = cv2.boundingRect(M)
+            # cv2.rectangle(img,(x,y),(x+w,y+h),(0,255,0),2)
+            x, y, w, h = cv2.boundingRect(cnt)
+            d = 0
+
+        if M['m00'] is not None:
+            if (w * h * 0.1 > cnt.size) & (w * h > 500):
+                crop_img = blurredImg[y - 5:y + h + 5, x - 5:x + w + 5]
+                # blargh = cv2.rectangle(blurredImg, (x, y), (x+w, y+h), (0, 255, 0), 2)
+                try:
+                    cv2.imshow("cropped", crop_img)
+                except Exception as e:
+                    print("Got an error", str(crop_img.size), Exception)
+                    continue
+                d = d + 1
+
+                # don't uncomment unless you want to save a lot of images
+                # input own path
+                # path = r'''C:\Users\Asaf Soreq\Desktop\DiskData\hj''' + str(i[0]) + ".jpg"
+                # print(path, (w * h), cnt.size)
+                # cv2.imwrite(path, crop_img)
+
+        # Put a rectangle on the image
+        cv2.rectangle(img, (100, 100), (400, 400), (255, 255, 255), 5)
+
+        # Give the output stream a new image to display
+        # May not work because of two values, might need to make new image that includes both side by side
+        outputStream.putFrame(blurredImg, total_frame_threshold)
+
+
+if __name__ == "__main__":
+
+    # To see messages from networktables, you must setup logging
+    import logging
+
+    logging.basicConfig(level=logging.DEBUG)
+
+    # You should uncomment these to connect to the RoboRIO
+    import networktables
+    networktables.initialize(server='10.59.51.2')
+
+    main()
