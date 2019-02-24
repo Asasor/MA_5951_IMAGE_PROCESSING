@@ -1,0 +1,53 @@
+#!/usr/bin/env python3
+#
+# Uses the CameraServer class to automatically capture video from two USB
+# webcams and send one of them to the dashboard without doing any processing.
+# To switch between the cameras, change the /CameraPublisher/selected value in NetworkTables
+#
+# Warning: If you're using this with a python-based robot, do not run this
+# in the same program as your robot code!
+#
+
+from cscore import CameraServer, UsbCamera
+import networktables
+
+
+def main():
+    cs = CameraServer.getInstance()
+    cs.enableLogging()
+
+    usb0 = UsbCamera("Camera 0", 0)
+    usb1 = UsbCamera("Camera 1", 1)
+    usb2 = UsbCamera("Camera 2", 2)
+
+    server = cs.startAutomaticCapture(camera=usb0, return_server=True)
+    server.setSource(usb0)
+
+    # Use networktables to switch the source
+    # -> obviously, you can switch them however you'd like
+    def _listener(source, key, value, isNew):
+        if str(value) == "0":
+            server.setSource(usb0)
+        elif str(value) == "1":
+            server.setSource(usb1)
+        elif str(value) == "2":
+            server.setSource(usb2)
+
+    table = networktables.NetworkTables.getTable('SmartDashboard')
+    table.putString("selected", "0")
+    table.addEntryListener(_listener, key="selected")
+
+    cs.waitForever()
+
+
+if __name__ == "__main__":
+
+    # To see messages from networktables, you must setup logging
+    import logging
+
+    logging.basicConfig(level=logging.DEBUG)
+
+    # You should change this to connect to the RoboRIO
+    networktables.NetworkTables.initialize(server="localhost")
+
+    main()
