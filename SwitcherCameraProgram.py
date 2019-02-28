@@ -12,7 +12,7 @@
 import cv2
 import numpy as np
 from networktables import NetworkTables
-from cscore import CameraServer, UsbCamera
+from cscore import CameraServer, UsbCamera, CvSource
 from networktables import NetworkTablesInstance
 
 
@@ -23,6 +23,8 @@ def main():
     cs.enableLogging()
 
     camera0 = cs.startAutomaticCapture(dev=0)
+    camera1 = UsbCamera("cam1", 1)
+    camera2 = UsbCamera("cam2", 2)
 
     # Get a CvSink. This will capture images from the camera
     cvSink = cs.getVideo()
@@ -32,32 +34,28 @@ def main():
     # (optional) Setup a CvSource. This will send images back to the Dashboard
     smartDash = networktables.NetworkTables.getTable('SmartDashboard')
 
+    def _listener(source, key, value, isNew):
+        if value == 0:
+            cvSink.setSource(camera0)
+        elif value == 1:
+            cvSink.setSource(camera1)
+        elif value == 2:
+            cvSink.setSource(camera2)
+
     smartDash.putNumber("Num", 0)
-
-    # smartDash.addEntryListener(_listener, key="Num")
     outputStream = cs.putVideo("Out", 320, 240)
-
-    # Allocating new images is very expensive, always try to preallocate
-
-    value = smartDash.getAutoUpdateValue("Num", 0)
 
     while True:
 
-        if value.value == 0:
-            cvSink.setSource(camera0)
-        elif value.value == 1:
-            cvSink.setSource(dev=1)
-        elif value.value == 2:
-            cvSink.setSource(dev=2)
-
+        smartDash.addEntryListener(_listener, key="Num")
         time, img = cvSink.grabFrame(img)
         if time == 0:
-            # Send the output the error.
+            # Send the error.
             outputStream.notifyError(cvSink.getError())
             # skip the rest of the current iteration
             continue
 
-        # Give the output stream a new image to display
+        # display a new image on the outputStream
         outputStream.putFrame(img)
 
 
